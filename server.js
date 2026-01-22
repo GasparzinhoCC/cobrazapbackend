@@ -1,61 +1,61 @@
-// backend/server.js
 const express = require("express");
+const cors = require("cors");
 const bodyParser = require("body-parser");
 const admin = require("firebase-admin");
-const fetch = require("node-fetch");
 
-// Carrega Service Account JSON do Firebase
 const serviceAccount = require("./serviceAccountKey.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://cobrazapia.firebaseio.com"
 });
 
 const db = admin.firestore();
+
 const app = express();
+
+// CORS configurado para Netlify (substitua pelo seu domínio)
+app.use(cors({
+  origin: ["https://SEU-SITE.netlify.app"], 
+  credentials: true
+}));
+
 app.use(bodyParser.json());
 
-const PORT = process.env.PORT || 3000;
+// Teste de backend
+app.get("/", (req, res) => res.send("Backend funcionando!"));
 
-// Mercado Pago Access Token
-const MP_ACCESS_TOKEN = "APP_USR-818599989759132-012209-35905b58280d1b334cd49b46590b044e-99553539";
+// Contagem de mensagens grátis
+app.get("/messages/:userId", async (req, res) => {
+  const { userId } = req.params;
+  const doc = db.collection("users").doc(userId);
+  const user = await doc.get();
+  if (!user.exists) {
+    await doc.set({ freeMessages: 5, premium: false });
+    return res.json({ freeMessages: 5 });
+  }
+  return res.json(user.data());
+});
+
+// Atualizar mensagens usadas
+app.post("/messages/use/:userId", async (req, res) => {
+  const { userId } = req.params;
+  const doc = db.collection("users").doc(userId);
+  const user = await doc.get();
+  if (!user.exists) return res.status(404).json({ error: "Usuário não encontrado" });
+  const data = user.data();
+  const freeMessages = data.freeMessages > 0 ? data.freeMessages - 1 : 0;
+  await doc.update({ freeMessages });
+  res.json({ freeMessages });
+});
 
 // Webhook Mercado Pago
 app.post("/mp-webhook", async (req, res) => {
-  const { data } = req.body;
-  if (!data || !data.id) return res.status(400).send("No data");
-
-  try {
-    const mpRes = await fetch(https://api.mercadopago.com/v1/payments/${data.id}, {
-      headers: { Authorization: Bearer ${MP_ACCESS_TOKEN} },
-    });
-    const payment = await mpRes.json();
-
-    if (payment.status === "approved") {
-      const userId = payment.external_reference; // ID do usuário enviado no link
-      const premiumDuration = payment.plan === "monthly" ? 30 : 365; // dias
-      const premiumUntil = new Date();
-      premiumUntil.setDate(premiumUntil.getDate() + premiumDuration);
-
-      await db.collection("users").doc(userId).update({
-        plano: "premium",
-        premium_ate: premiumUntil,
-      });
-      console.log(Usuário ${userId} liberado para premium até ${premiumUntil});
-    }
-
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error");
-  }
+  const payment = req.body;
+  console.log("Pagamento recebido:", payment);
+  // Atualizar Premium no Firebase aqui
+  res.sendStatus(200);
 });
 
-// Rotas do admin
-app.get("/admin/users", async (req, res) => {
-  const snapshot = await db.collection("users").get();
-  const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  res.json(users);
-});
-
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(Backend rodando na porta ${PORT}));
